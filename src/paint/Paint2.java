@@ -13,10 +13,20 @@ import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Rectangle2D;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.nio.file.Path;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 
-public class Paint2 {
+public class Paint2 implements Serializable {
+
+	private static final long serialVersionUID = -812840923682573740L;
+
 	private final int STROKE_WIDTH = 21;
 	
 	private JFrame window;
@@ -36,13 +46,20 @@ public class Paint2 {
 	private DecimalFormat transparencyFormat = new DecimalFormat("0.00");
 	private int depth = 0;
 	private boolean shiftDown;
-	
+	private ArrayList<Drawing> undoList = new ArrayList<Drawing>();
+	private File savedFile;
+	private boolean differentFromSaved = false;
 	
 	private Paint2() {
 		window = new JFrame("Java Paint");
 		window.setSize(1200, 800);
-		window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		window.setLocationRelativeTo(null);
+		window.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		window.addWindowListener(new WindowAdapter() {
+			public void windowClosing(WindowEvent e) {
+				exit();
+			}
+		});
 		
 		DrawingPanel drawingPanel = new DrawingPanel();
 		drawingPanel.setOpaque(false);
@@ -62,10 +79,14 @@ public class Paint2 {
 		clearBut.setBackground(Color.WHITE);
 		clearBut.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				drawings.clear();
+				Shape bg = new DrawingPanel().drawBackground(drawingPanel.getX(), drawingPanel.getY(), drawingPanel.getWidth(), drawingPanel.getHeight());
+				Drawing background = new Drawing(bg, bg, Color.WHITE, Color.WHITE, 1, 1.0f, false);
+				drawings.add(background);
+				differentFromSaved = true;
 				drawingPanel.repaint();
 			}
 		});
+		clearBut.setMnemonic(KeyEvent.VK_C);
 		
 		transparencyLabel = new JLabel("Transparency: " + transparencyFormat.format(transparency));
 		transparencyLabel.setHorizontalAlignment(JLabel.CENTER);
@@ -142,17 +163,43 @@ public class Paint2 {
 		JMenuBar mb = new JMenuBar();
 		
 		JMenu file = new JMenu("File");
+		file.setMnemonic(KeyEvent.VK_F);
+		JMenu edit = new JMenu("Edit");
+		edit.setMnemonic(KeyEvent.VK_E);
 		JMenu about = new JMenu("About");
+		about.setMnemonic(KeyEvent.VK_A);
 
 		JMenuItem newMenu = new JMenuItem("New...");
 		JMenuItem open = new JMenuItem("Open...");
-		JMenuItem save = new JMenuItem("Save...");
+		JMenuItem saveMenu = new JMenuItem("Save");
+		JMenuItem saveAs = new JMenuItem("Save As...");
 		JMenuItem importMenu = new JMenuItem("Import...");
 		JMenuItem export = new JMenuItem("Export...");
 		JMenuItem exit = new JMenuItem("Exit");
 		
+		newMenu.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				if (differentFromSaved) {
+					sure("Do you want to save your work before creating a new file?");
+				}
+				
+				savedFile = null;
+				differentFromSaved = false;
+				drawings.clear();
+				undoList.clear();
+				window.repaint();
+			}
+		});
+		newMenu.setMnemonic(KeyEvent.VK_N);
+		KeyStroke ctrlN = KeyStroke.getKeyStroke('N', Toolkit.getDefaultToolkit().getMenuShortcutKeyMask());
+		newMenu.setAccelerator(ctrlN);
+		
 		open.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
+				if (differentFromSaved) {
+					sure("Do you wanto to save your work before opening a new file?");
+				}
+				
 				JFileChooser fc = new JFileChooser(".");	// Luego sacar el "." para usar la home
 				FileFilter filter1 = new ExtensionFileFilter("jpt");
 				fc.setFileFilter(filter1);
@@ -161,40 +208,198 @@ public class Paint2 {
 				int status = fc.showOpenDialog(window);
 				
 				if (status == JFileChooser.APPROVE_OPTION) {
-					// openFile(fc.getSelectedFile());
+					savedFile = fc.getSelectedFile();
+					openFile(savedFile);
 				}
 			}
 		});
+		open.setMnemonic(KeyEvent.VK_O);
+		KeyStroke ctrlO = KeyStroke.getKeyStroke('O', Toolkit.getDefaultToolkit().getMenuShortcutKeyMask());
+		open.setAccelerator(ctrlO);
 		
-		save.addActionListener(new ActionListener() {
+		saveMenu.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				JFileChooser fc = new JFileChooser(".");// Luego sacar el "." para usar la home
-				int status = fc.showSaveDialog(window);
-				
-				if (status == JFileChooser.APPROVE_OPTION) {
-					// saveFile(fc.getSelectedFile());
+				if (savedFile != null) {
+					saveFile(savedFile);
+				} else {
+					saveAs();
 				}
 			}
 		});
+		saveMenu.setMnemonic(KeyEvent.VK_S);
+		KeyStroke ctrlS = KeyStroke.getKeyStroke('S', Toolkit.getDefaultToolkit().getMenuShortcutKeyMask());
+		saveMenu.setAccelerator(ctrlS);
+		
+		saveAs.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				saveAs();
+			}
+		});
+		saveAs.setMnemonic(KeyEvent.VK_A);
 		
 		exit.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				System.exit(0);
+				exit();
+			}
+		});
+		exit.setMnemonic(KeyEvent.VK_X);
+		KeyStroke ctrlX = KeyStroke.getKeyStroke('X', Toolkit.getDefaultToolkit().getMenuShortcutKeyMask());
+		exit.setAccelerator(ctrlX);
+		
+		JMenuItem undo = new JMenuItem("Undo");
+		JMenuItem redo = new JMenuItem("Redo");
+		
+		undo.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+					undo();
+			}
+		});
+		
+		KeyStroke ctrlZ = KeyStroke.getKeyStroke('Z', Toolkit.getDefaultToolkit().getMenuShortcutKeyMask());
+		undo.setAccelerator(ctrlZ);
+		undo.setMnemonic(KeyEvent.VK_U);
+		
+		KeyStroke ctrlshZ = KeyStroke.getKeyStroke('Z', Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()+ActionEvent.SHIFT_MASK);
+		redo.setAccelerator(ctrlshZ);
+		redo.setMnemonic(KeyEvent.VK_R);
+		
+		redo.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+					redo();
 			}
 		});
 		
 		file.add(newMenu);
 		file.add(open);
-		file.add(save);
+		file.addSeparator();
+		file.add(saveMenu);
+		file.add(saveAs);
 		file.addSeparator();
 		file.add(importMenu);
 		file.add(export);
 		file.addSeparator();
 		file.add(exit);
 		
+		edit.add(undo);
+		edit.add(redo);
+		
 		mb.add(file);
+		mb.add(edit);
 		mb.add(about);
 		return mb;
+	}
+	
+	private void sure(String title) {
+		String message = "There have been changes since the last time you saved your painting.";
+		int option = JOptionPane.showConfirmDialog(window, message, title, JOptionPane.YES_NO_OPTION);
+		if (option == 0) {
+			if (savedFile == null) {
+				saveAs();
+			} else {
+				saveFile(savedFile);
+			}
+		}
+	}
+	
+	private void exit() {
+		if (differentFromSaved) {
+			String title = "Do you want to save your work before exiting?";
+			String message = "There have been changes since the last time you saved your painting.";
+			int sure = JOptionPane.showConfirmDialog(window, message, title, JOptionPane.YES_NO_OPTION);
+			
+			if (sure == 1) {
+				System.exit(0);
+			} else {
+				if (savedFile != null) {
+					saveFile(savedFile);
+				} else {
+					saveAs();
+					System.exit(0);
+				}
+			}
+		} else {
+			System.exit(0);
+		}
+	}
+	
+	private void saveAs() {
+		JFileChooser fc = new JFileChooser(".");// Luego sacar el "." para usar la home
+		FileFilter filter1 = new ExtensionFileFilter("jpt");
+		fc.setFileFilter(filter1);
+		fc.addChoosableFileFilter(filter1);
+
+		int status = fc.showSaveDialog(window);
+		
+		if (status == JFileChooser.APPROVE_OPTION) {
+			if (fc.getSelectedFile().exists()) {
+				int overwrite = JOptionPane.showConfirmDialog(window, "The file already exists. Do you want to overwrite it?");
+				switch (overwrite) {
+					case 0:
+						break;
+					case 1:
+						saveAs();
+						return;
+					case 2:
+						return;
+				}
+			}
+			
+			String file = fc.getSelectedFile().toString();
+			
+			if (file.endsWith(".jpt")) {
+				savedFile = fc.getSelectedFile();
+			} else {
+				String sFile = fc.getSelectedFile().toString();
+				sFile = sFile + ".jpt";
+				savedFile = new File(sFile);
+			}
+			
+			saveFile(savedFile);
+		}
+	}
+	
+	private void saveFile(File file) {
+		try {
+			ObjectOutputStream f = new ObjectOutputStream(new FileOutputStream(file));
+			f.writeObject(drawings);
+			f.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		differentFromSaved = false;
+	}
+	
+	private void openFile(File file) {
+		try {
+			ObjectInputStream f = new ObjectInputStream(new FileInputStream(file));
+			
+			drawings.clear();
+			drawings = (ArrayList<Drawing>) f.readObject();
+			f.close();
+			
+			differentFromSaved = false;
+			
+			window.repaint();
+		} catch (IOException | ClassNotFoundException e) {
+			e.printStackTrace();
+		} 
+	}
+	
+	private void undo() {
+		if (drawings.size() != 0) {
+			undoList.add(drawings.get(drawings.size() - 1));
+			drawings.remove(drawings.size() - 1);
+			window.repaint();
+		}
+	}
+	
+	private void redo() {
+		if (undoList.size() != 0) {
+			drawings.add(undoList.get(undoList.size() - 1));
+			undoList.remove(undoList.size() - 1);
+			window.repaint();
+		}
 	}
 	
 	class ExtensionFileFilter extends FileFilter {
@@ -322,6 +527,8 @@ public class Paint2 {
 					
 					drawings.add(new Drawing(aShape, innerShape, strokeColor, fillColor, strokeWidth, transparency, false));
 					
+					differentFromSaved = true;
+					
 					drawStart = null;
 					drawEnd = null;
 					repaint();
@@ -339,6 +546,8 @@ public class Paint2 {
 						System.out.println("X: " + x + "\nY: " + y);
 						Shape aShape = new Ellipse2D.Float(x, y, strokeWidth, strokeWidth);
 						drawings.add(new Drawing(aShape, aShape, strokeColor, strokeColor, strokeWidth, transparency, true));
+						
+						differentFromSaved = true;
 					} else if (currentAction == 5) {	// Eraser
 						int x = e.getX();
 						int y = e.getY();
@@ -346,6 +555,8 @@ public class Paint2 {
 						System.out.println("X: " + x + "\nY: " + y);
 						Shape aShape = new Ellipse2D.Float(x, y, strokeWidth, strokeWidth);
 						drawings.add(new Drawing(aShape, aShape, Color.WHITE, Color.WHITE, strokeWidth, 1, true));
+						
+						differentFromSaved = true;
 					}
 					
 					drawEnd = new Point(e.getX(), e.getY());
@@ -359,7 +570,7 @@ public class Paint2 {
 			Line2D.Float line = null;
 			
 			if (shiftDown) {	// Make straight lines
-				if ((y2 > (y1 + 50)) || (y2 < (y1 - 50))) {
+				if ((y2 > (y1 + 4)) || (y2 < (y1 - 4))) {
 					line = new Line2D.Float(x1, y1, x1, y2);
 				} else {
 					line = new Line2D.Float(x1, y1, x2, y1);						
@@ -491,7 +702,7 @@ public class Paint2 {
 			return rectangle;
 		}
 		
-		private Rectangle2D.Float drawBackground(int x1, int y1, int x2, int y2) {
+		Rectangle2D.Float drawBackground(int x1, int y1, int x2, int y2) {
 			int x = Math.min(x1, x2);
 			int y = Math.min(y1, y2);
 			int height = Math.abs(y1 - y2);

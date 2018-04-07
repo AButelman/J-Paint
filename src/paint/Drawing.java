@@ -1,8 +1,12 @@
 package paint;
 
 import java.awt.*;
+import java.io.Serializable;
 
-public class Drawing {
+public class Drawing implements Serializable {
+	
+	private static final long serialVersionUID = 1787363027028483588L;
+	
 	private Shape shape;
 	private Shape innerShape;
 	private Color strokeColor, fillColor;
