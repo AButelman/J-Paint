@@ -678,7 +678,6 @@ public class Paint implements Serializable {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				currentAction = actionNum;
-				System.out.println(currentAction);
 			}
 		});
 		return but;
@@ -741,7 +740,6 @@ public class Paint implements Serializable {
 						int x = e.getX();
 						int y = e.getY();
 						
-						System.out.println("X: " + x + "\nY: " + y);
 						Shape aShape = new Ellipse2D.Float(x, y, strokeWidth, strokeWidth);
 						drawings.add(new Drawing(aShape, aShape, strokeColor, strokeColor, strokeWidth, transparency, true));
 						
@@ -750,7 +748,6 @@ public class Paint implements Serializable {
 						int x = e.getX();
 						int y = e.getY();
 						
-						System.out.println("X: " + x + "\nY: " + y);
 						Shape aShape = new Ellipse2D.Float(x, y, strokeWidth, strokeWidth);
 						drawings.add(new Drawing(aShape, aShape, Color.WHITE, Color.WHITE, strokeWidth, 1, true));
 						
