@@ -313,6 +313,7 @@ public class Paint implements Serializable {
 		}
 		
 		savedFile = null;
+		image = null;
 		differentFromSaved = false;
 		drawings.clear();
 		undoList.clear();
